@@ -26,30 +26,34 @@ class PrefetchingResultSetIterator(resultSet: AsyncResultSet, timer: Option[Time
 
   private def fetchNextPage(): Option[Future[AsyncResultSet]] = {
     if (currentResultSet.hasMorePages) {
-      val t0 = System.nanoTime();
+      val t0 = System.nanoTime()
       val next = ScalaJavaUtil.asScalaFuture(currentResultSet.fetchNextPage())
       timer.foreach { t =>
         next.foreach(_ => t.update(System.nanoTime() - t0, TimeUnit.NANOSECONDS))
       }
       Option(next)
-    } else
+    } else 
+    {
       None
+    }
   }
 
-  private def maybePrefetch(): Unit = {
-    if (!currentIterator.hasNext && currentResultSet.hasMorePages) {
+  private def advanceToNextNonEmptyPage(): Unit = {
+    while (!currentIterator.hasNext && nextResultSet.isDefined) {
       currentResultSet = Await.result(nextResultSet.get, Duration.Inf)
       currentIterator = currentResultSet.currentPage().iterator()
       nextResultSet = fetchNextPage()
     }
   }
 
-  override def hasNext: Boolean =
-    currentIterator.hasNext || currentResultSet.hasMorePages
+  override def hasNext: Boolean = {
+    advanceToNextNonEmptyPage()
+    currentIterator.hasNext
+  }
 
   override def next(): Row = {
-    val row = currentIterator.next() // let's try to exhaust the current iterator first
-    maybePrefetch()
+    val row = currentIterator.next()
+    advanceToNextNonEmptyPage()
     row
   }
 }
