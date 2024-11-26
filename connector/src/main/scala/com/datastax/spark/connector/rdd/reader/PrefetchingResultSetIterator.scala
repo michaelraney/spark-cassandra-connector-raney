@@ -38,8 +38,8 @@ class PrefetchingResultSetIterator(resultSet: AsyncResultSet, timer: Option[Time
     }
   }
 
-  private def advanceToNextNonEmptyPage(): Unit = {
-    while (!currentIterator.hasNext && nextResultSet.isDefined) {
+  private def maybePrefetch(): Unit = {
+    if (!currentIterator.hasNext && currentResultSet.hasMorePages) {
       currentResultSet = Await.result(nextResultSet.get, Duration.Inf)
       currentIterator = currentResultSet.currentPage().iterator()
       nextResultSet = fetchNextPage()
@@ -47,13 +47,23 @@ class PrefetchingResultSetIterator(resultSet: AsyncResultSet, timer: Option[Time
   }
 
   override def hasNext: Boolean = {
-    advanceToNextNonEmptyPage()
-    currentIterator.hasNext
+    
+    findNextNoneZeroPage()
+
+    currentIterator.hasNext || currentResultSet.hasMorePages
   }
 
   override def next(): Row = {
     val row = currentIterator.next()
-    advanceToNextNonEmptyPage()
+    maybePrefetch()
     row
+  }
+
+  private def findNextNoneZeroPage(): Unit = {
+    while (!currentIterator.hasNext && nextResultSet.isDefined) {
+      currentResultSet = Await.result(nextResultSet.get, Duration.Inf)
+      currentIterator = currentResultSet.currentPage().iterator()
+      nextResultSet = fetchNextPage()
+    }
   }
 }
